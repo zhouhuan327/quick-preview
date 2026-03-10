@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+          - platform: windows-latest
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Quick Preview ${{ github.ref_name }}'
+          releaseBody: |
+            ## Quick Preview ${{ github.ref_name }}
+
+            ### 安装说明
+            - **macOS (Apple Silicon)**: 下载 `quick-preview_*_aarch64.dmg`
+            - **macOS (Intel)**: 下载 `quick-preview_*_x64.dmg`
+            - **Windows**: 下载 `quick-preview_*_x64-setup.exe`
+
+            > macOS 首次打开提示"无法验证开发者"：右键 → 打开 → 仍要打开
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
