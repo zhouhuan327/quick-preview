@@ -61,8 +61,8 @@ export function groupMediaFiles(files: FileInfo[], mergeRaw: boolean): MediaGrou
     groups.push({ id: base, jpg, raw, video, display, isVideo: !jpg && !raw && !!video });
   }
 
-  // Sort by display file name
-  groups.sort((a, b) => a.display.name.toLowerCase().localeCompare(b.display.name.toLowerCase()));
+  // Sort by modified time (ascending, caller can reverse for desc)
+  groups.sort((a, b) => a.display.modified - b.display.modified);
 
   return groups;
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Download, Settings, Loader2, MousePointer2, RefreshCw, Search, X } from "lucide-react";
+import { Download, Settings, Loader2, MousePointer2, RefreshCw, Search, X, ArrowDownUp } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { MediaGrid } from "./components/MediaGrid";
 import { PreviewModal } from "./components/PreviewModal";
@@ -18,6 +18,7 @@ export default function App() {
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [groups, setGroups] = useState<MediaGroup[]>([]);
   const [loading, setLoading] = useState(false);
+  const [sortDesc, setSortDesc] = useState(true);
   const [pickedIds, setPickedIds] = useState<Set<string>>(new Set());
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [settings, setSettings] = useState<SettingsType>(() => loadSettings());
@@ -42,8 +43,9 @@ export default function App() {
 
   const filteredGroups = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
-    return q ? groups.filter((g) => g.display.name.toLowerCase().includes(q)) : groups;
-  }, [debouncedQuery, groups]);
+    const filtered = q ? groups.filter((g) => g.display.name.toLowerCase().includes(q)) : [...groups];
+    return sortDesc ? filtered.reverse() : filtered;
+  }, [debouncedQuery, groups, sortDesc]);
 
   async function loadFolder(path: string) {
     setLoading(true);
@@ -127,12 +129,16 @@ export default function App() {
       // Space: open/close preview for hovered item
       if (key === settings.keybindings.preview) {
         e.preventDefault();
-        if (previewIndex !== null) {
+        if (previewIndex !== null || videoPreviewIndex !== null) {
           setPreviewIndex(null);
-        } else if (hoverIndex !== null) {
-          setPreviewIndex(hoverIndex);
-        } else if (groups.length > 0) {
-          setPreviewIndex(0);
+          setVideoPreviewIndex(null);
+        } else {
+          const targetIndex = hoverIndex !== null ? hoverIndex : (groups.length > 0 ? 0 : null);
+          if (targetIndex !== null) {
+            const g = groups[targetIndex];
+            if (g?.isVideo) setVideoPreviewIndex(targetIndex);
+            else setPreviewIndex(targetIndex);
+          }
         }
       }
       // pick key: toggle pick for hovered item (grid mode)
@@ -141,7 +147,7 @@ export default function App() {
         onTogglePickRef.current(groups[hoverIndex].id);
       }
     },
-    [showSettings, settings.keybindings.preview, previewIndex, hoverIndex, groups]
+    [showSettings, settings.keybindings.preview, previewIndex, videoPreviewIndex, hoverIndex, groups]
   );
 
   useEffect(() => {
@@ -211,6 +217,13 @@ export default function App() {
                 </button>
               </div>
             )}
+            <button
+              onClick={() => setSortDesc((v) => !v)}
+              title={sortDesc ? "当前：倒序" : "当前：正序"}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <ArrowDownUp size={14} className={sortDesc ? "text-blue-400" : ""} />
+            </button>
             <button
               onClick={() => activeBookmarkId && loadFolder(bookmarks.find(b => b.id === activeBookmarkId)!.path)}
               disabled={!activeBookmarkId || loading}
