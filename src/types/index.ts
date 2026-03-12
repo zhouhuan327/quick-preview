@@ -10,7 +10,9 @@ export interface MediaGroup {
   id: string;       // base name without extension
   jpg: FileInfo | null;
   raw: FileInfo | null;
+  video: FileInfo | null;
   display: FileInfo; // the one shown in grid (jpg preferred)
+  isVideo: boolean;
 }
 
 export interface Bookmark {

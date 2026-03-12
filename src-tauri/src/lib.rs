@@ -25,6 +25,7 @@ async fn scan_directory(path: String) -> Result<Vec<FileInfo>, String> {
     let image_exts = [
         "jpg", "jpeg", "png", "gif", "webp", "heic", "heif",
         "arw", "cr2", "cr3", "nef", "orf", "raf", "dng", "rw2",
+        "mp4", "mov", "avi", "mkv", "webm", "m4v",
     ];
 
     let entries = fs::read_dir(dir).map_err(|e| e.to_string())?;

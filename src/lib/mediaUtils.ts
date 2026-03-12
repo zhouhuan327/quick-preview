@@ -2,6 +2,7 @@ import type { FileInfo, MediaGroup } from "../types";
 
 const RAW_EXTS = new Set(["arw", "cr2", "cr3", "nef", "orf", "raf", "dng", "rw2"]);
 const IMG_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "heic", "heif"]);
+const VID_EXTS = new Set(["mp4", "mov", "avi", "mkv", "webm", "m4v"]);
 
 function getExt(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
@@ -21,34 +22,43 @@ export function isImage(name: string): boolean {
   return IMG_EXTS.has(getExt(name));
 }
 
+export function isVideo(name: string): boolean {
+  return VID_EXTS.has(getExt(name));
+}
+
 export function groupMediaFiles(files: FileInfo[], mergeRaw: boolean): MediaGroup[] {
   if (!mergeRaw) {
     return files
-      .filter((f) => isImage(f.name))
+      .filter((f) => isImage(f.name) || isVideo(f.name))
       .map((f) => ({
         id: f.path,
-        jpg: f,
+        jpg: isImage(f.name) ? f : null,
         raw: null,
+        video: isVideo(f.name) ? f : null,
         display: f,
+        isVideo: isVideo(f.name),
       }));
   }
 
-  const map = new Map<string, { jpg: FileInfo | null; raw: FileInfo | null }>();
+  const map = new Map<string, { jpg: FileInfo | null; raw: FileInfo | null; video: FileInfo | null }>();
 
   for (const f of files) {
     const base = getBaseName(f.name);
-    if (!map.has(base)) map.set(base, { jpg: null, raw: null });
+    if (!map.has(base)) map.set(base, { jpg: null, raw: null, video: null });
     const group = map.get(base)!;
     if (isImage(f.name)) group.jpg = f;
     else if (isRaw(f.name)) group.raw = f;
+    else if (isVideo(f.name)) group.video = f;
   }
 
   const groups: MediaGroup[] = [];
-  for (const [base, { jpg, raw }] of map) {
-    if (!jpg && !raw) continue;
-    const display = jpg ?? raw!;
-    if (!isImage(display.name) && !raw) continue; // skip pure raw with no jpg? still show
-    groups.push({ id: base, jpg, raw, display });
+  for (const [base, { jpg, raw, video }] of map) {
+    if (!jpg && !raw && !video) continue;
+    const display = jpg ?? raw ?? video!;
+    const vidOnly = !jpg && !raw && !!video;
+    const imgOrRaw = !!(jpg || raw);
+    if (!imgOrRaw && !vidOnly) continue;
+    groups.push({ id: base, jpg, raw, video, display, isVideo: !jpg && !raw && !!video });
   }
 
   // Sort by display file name

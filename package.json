@@ -1,7 +1,7 @@
 {
   "name": "quick-preview",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,6 +22,7 @@
     "lucide-react": "^0.577.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-player": "^3.4.0",
     "react-window": "^2.2.7",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.1"

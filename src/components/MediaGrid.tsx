@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Check } from "lucide-react";
+import { Check, Play } from "lucide-react";
 import type { MediaGroup } from "../types";
 
 const COLS = 4;
@@ -17,8 +17,83 @@ interface Props {
   onTogglePick: (id: string) => void;
 }
 
-function Thumbnail({ src, alt }: { src: string; alt: string }) {
+function VideoThumbnail({ src }: { src: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+
+  const handleSeeked = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth || 320;
+    canvas.height = video.videoHeight || 180;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    try {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const url = canvas.toDataURL("image/jpeg", 0.8);
+      setThumbUrl(url);
+      setLoaded(true);
+    } catch (e) {
+      // canvas tainted - fallback to showing video directly
+      setLoaded(true);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    // Play then immediately pause to force GPU decode + frame render
+    video.play().then(() => {
+      video.pause();
+      video.currentTime = 0.5;
+    }).catch(() => {
+      video.currentTime = 0.5;
+    });
+  };
+
+  return (
+    <>
+      {!loaded && <div className="absolute inset-0 bg-white/5 animate-pulse rounded-lg" />}
+      {/* Hidden video for frame extraction */}
+      <video
+        ref={videoRef}
+        src={src}
+        muted
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={handleLoadedMetadata}
+        onSeeked={handleSeeked}
+        style={{ display: "none" }}
+      />
+      <canvas ref={canvasRef} style={{ display: "none" }} />
+      {thumbUrl ? (
+        <img
+          src={thumbUrl}
+          alt="video thumbnail"
+          className={`w-full h-full object-cover transition-opacity duration-200 ${loaded ? "opacity-100" : "opacity-0"}`}
+        />
+      ) : loaded ? (
+        /* fallback: show video element directly */
+        <video
+          src={src}
+          muted
+          playsInline
+          className="w-full h-full object-cover"
+          style={{ pointerEvents: "none" }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function Thumbnail({ src, alt, isVideo }: { src: string; alt: string; isVideo?: boolean }) {
+  const [loaded, setLoaded] = useState(false);
+  if (isVideo) {
+    return <VideoThumbnail src={src} />;
+  }
   return (
     <>
       {!loaded && <div className="absolute inset-0 bg-white/5 animate-pulse rounded-lg" />}
@@ -116,9 +191,16 @@ export function MediaGrid({ groups, pickedIds, selectionMode, onPreview, onHover
                 onClick={() => selectionMode ? onTogglePick(group.id) : onPreview(index)}
                 onMouseEnter={() => onHoverIndex(index)}
               >
-                <Thumbnail src={src} alt={group.display.name} />
+                <Thumbnail src={src} alt={group.display.name} isVideo={group.isVideo} />
 
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-150" />
+
+                {group.isVideo && (
+                  <div className="absolute bottom-2 right-2 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-sm">
+                    <Play size={9} className="text-white fill-white" />
+                    <span className="text-[9px] text-white/80 font-medium leading-none">VIDEO</span>
+                  </div>
+                )}
 
                 <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                   <p className="text-xs text-white truncate">{group.display.name}</p>

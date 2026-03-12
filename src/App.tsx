@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Download, Settings, Loader2, MousePointer2, RefreshCw } from "lucide-react";
+import { Download, Settings, Loader2, MousePointer2, RefreshCw, Search, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { MediaGrid } from "./components/MediaGrid";
 import { PreviewModal } from "./components/PreviewModal";
+import { VideoPreviewModal } from "./components/VideoPreviewModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { groupMediaFiles } from "./lib/mediaUtils";
 import { loadBookmarks, saveBookmarks, loadSettings, saveSettings } from "./lib/storage";
@@ -21,6 +22,10 @@ export default function App() {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [settings, setSettings] = useState<SettingsType>(() => loadSettings());
   const [showSettings, setShowSettings] = useState(false);
+  const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const onTogglePickRef = useRef(handleTogglePick);
@@ -28,6 +33,17 @@ export default function App() {
   useEffect(() => {
     setGroups(groupMediaFiles(files, settings.mergeRaw));
   }, [files, settings.mergeRaw]);
+
+  function handleSearchChange(value: string) {
+    setSearchQuery(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => setDebouncedQuery(value), 200);
+  }
+
+  const filteredGroups = useMemo(() => {
+    const q = debouncedQuery.trim().toLowerCase();
+    return q ? groups.filter((g) => g.display.name.toLowerCase().includes(q)) : groups;
+  }, [debouncedQuery, groups]);
 
   async function loadFolder(path: string) {
     setLoading(true);
@@ -160,6 +176,26 @@ export default function App() {
             )}
           </div>
 
+            {/* Search */}
+            <div className="relative flex items-center">
+              <Search size={13} className="absolute left-2.5 text-white/30 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="搜索文件名..."
+                className="pl-8 pr-7 py-1.5 text-sm bg-white/5 border border-white/10 rounded-lg text-white/70 placeholder-white/20 focus:outline-none focus:border-white/20 w-48"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => { setSearchQuery(""); setDebouncedQuery(""); }}
+                  className="absolute right-2 text-white/30 hover:text-white/60"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
           <div className="flex items-center gap-2">
             {pickedIds.size > 0 && (
               <div className="flex items-center gap-2">
@@ -212,9 +248,13 @@ export default function App() {
             </div>
           ) : (
             <MediaGrid
-              groups={groups}
+              groups={filteredGroups}
               pickedIds={pickedIds}
-              onPreview={setPreviewIndex}
+              onPreview={(idx) => {
+                const g = filteredGroups[idx];
+                if (g?.isVideo) setVideoPreviewIndex(idx);
+                else setPreviewIndex(idx);
+              }}
               onHoverIndex={setHoverIndex}
               selectionMode={selectionMode}
               onTogglePick={handleTogglePick}
@@ -224,13 +264,24 @@ export default function App() {
       </div>
 
       <PreviewModal
-        groups={groups}
+        groups={filteredGroups}
         index={previewIndex}
         pickedIds={pickedIds}
         keybindings={settings.keybindings}
         onClose={() => setPreviewIndex(null)}
         onNext={() => setPreviewIndex((i) => (i !== null && i < groups.length - 1 ? i + 1 : i))}
         onPrev={() => setPreviewIndex((i) => (i !== null && i > 0 ? i - 1 : i))}
+        onTogglePick={handleTogglePick}
+      />
+
+      <VideoPreviewModal
+        groups={filteredGroups}
+        index={videoPreviewIndex}
+        pickedIds={pickedIds}
+        keybindings={settings.keybindings}
+        onClose={() => setVideoPreviewIndex(null)}
+        onNext={() => setVideoPreviewIndex((i) => (i !== null && i < filteredGroups.length - 1 ? i + 1 : i))}
+        onPrev={() => setVideoPreviewIndex((i) => (i !== null && i > 0 ? i - 1 : i))}
         onTogglePick={handleTogglePick}
       />
 
