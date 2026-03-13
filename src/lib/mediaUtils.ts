@@ -37,7 +37,8 @@ export function groupMediaFiles(files: FileInfo[], mergeRaw: boolean): MediaGrou
         video: isVideo(f.name) ? f : null,
         display: f,
         isVideo: isVideo(f.name),
-      }));
+      }))
+      .sort((a, b) => a.display.modified - b.display.modified);
   }
 
   const map = new Map<string, { jpg: FileInfo | null; raw: FileInfo | null; video: FileInfo | null }>();
