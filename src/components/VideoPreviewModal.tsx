@@ -94,7 +94,7 @@ export function VideoPreviewModal({
             className={`absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-all z-10 ${isPicked ? "bg-blue-500 text-white shadow-lg shadow-blue-500/30" : "bg-white/10 text-white/70 hover:bg-white/20"}`}
           >
             {isPicked && <Check size={13} strokeWidth={3} />}
-            {isPicked ? "已选中" : "按 F 选中"}
+            {isPicked ? "已选中" : `按 ${keybindings.pick.toUpperCase()} 选中`}
           </button>
 
           {index > 0 && (

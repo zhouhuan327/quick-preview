@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Download, Settings, Loader2, MousePointer2, RefreshCw, Search, X, ArrowDownUp } from "lucide-react";
@@ -7,33 +7,29 @@ import { MediaGrid } from "./components/MediaGrid";
 import { PreviewModal } from "./components/PreviewModal";
 import { VideoPreviewModal } from "./components/VideoPreviewModal";
 import { SettingsModal } from "./components/SettingsModal";
-import { groupMediaFiles } from "./lib/mediaUtils";
-import { loadBookmarks, saveBookmarks, loadSettings, saveSettings } from "./lib/storage";
-import type { Bookmark, FileInfo, MediaGroup, Settings as SettingsType } from "./types";
+import { useStore } from "./store";
+
 import "./index.css";
 
 export default function App() {
-  const [bookmarks, setBookmarks] = useState<Bookmark[]>(() => loadBookmarks());
-  const [activeBookmarkId, setActiveBookmarkId] = useState<string | null>(null);
-  const [files, setFiles] = useState<FileInfo[]>([]);
-  const [groups, setGroups] = useState<MediaGroup[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [sortDesc, setSortDesc] = useState(true);
-  const [pickedIds, setPickedIds] = useState<Set<string>>(new Set());
-  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
-  const [settings, setSettings] = useState<SettingsType>(() => loadSettings());
-  const [showSettings, setShowSettings] = useState(false);
-  const [videoPreviewIndex, setVideoPreviewIndex] = useState<number | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const onTogglePickRef = useRef(handleTogglePick);
+  const {
+    bookmarks, activeBookmarkId, loading, sortDesc, groups,
+    pickedIds, selectionMode, previewIndex, videoPreviewIndex, hoverIndex,
+    searchQuery, settings, showSettings, ffmpegPath,
+    refreshFolder, setSortDesc,
+    selectBookmark, addBookmark, deleteBookmark,
+    togglePick, setSelectionMode,
+    setPreviewIndex, setVideoPreviewIndex, setHoverIndex,
+    setSearchQuery, setDebouncedQuery, updateSettings, setShowSettings,
+    checkFfmpeg,
+  } = useStore();
 
-  useEffect(() => {
-    setGroups(groupMediaFiles(files, settings.mergeRaw));
-  }, [files, settings.mergeRaw]);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const togglePickRef = useRef(togglePick);
+  togglePickRef.current = togglePick;
+
+  // 启动时检测 ffmpeg
+  useEffect(() => { checkFfmpeg(); }, []);
 
   function handleSearchChange(value: string) {
     setSearchQuery(value);
@@ -41,65 +37,13 @@ export default function App() {
     searchTimerRef.current = setTimeout(() => setDebouncedQuery(value), 200);
   }
 
+  const debouncedQuery = useStore((s) => s.debouncedQuery);
+
   const filteredGroups = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
     const filtered = q ? groups.filter((g) => g.display.name.toLowerCase().includes(q)) : [...groups];
     return sortDesc ? filtered.reverse() : filtered;
   }, [debouncedQuery, groups, sortDesc]);
-
-  async function loadFolder(path: string) {
-    setLoading(true);
-    setPickedIds(new Set());
-    setPreviewIndex(null);
-    try {
-      const result = await invoke<FileInfo[]>("scan_directory", { path });
-      setFiles(result);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleSelectBookmark(b: Bookmark) {
-    setActiveBookmarkId(b.id);
-    loadFolder(b.path);
-  }
-
-  function handleAddBookmark(b: Bookmark) {
-    const next = [...bookmarks, b];
-    setBookmarks(next);
-    saveBookmarks(next);
-    setActiveBookmarkId(b.id);
-    loadFolder(b.path);
-  }
-
-  function handleDeleteBookmark(id: string) {
-    const next = bookmarks.filter((b) => b.id !== id);
-    setBookmarks(next);
-    saveBookmarks(next);
-    if (activeBookmarkId === id) {
-      setActiveBookmarkId(null);
-      setFiles([]);
-    }
-  }
-
-  // Keep ref in sync
-  onTogglePickRef.current = handleTogglePick;
-
-  function handleTogglePick(id: string) {
-    setPickedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function handleSettingsChange(s: SettingsType) {
-    setSettings(s);
-    saveSettings(s);
-  }
 
   async function handleExport() {
     if (pickedIds.size === 0) return;
@@ -111,6 +55,7 @@ export default function App() {
       if (!pickedIds.has(group.id)) continue;
       if (group.jpg) filesToCopy.push(group.jpg.path);
       if (group.raw) filesToCopy.push(group.raw.path);
+      if (group.video) filesToCopy.push(group.video.path);
     }
 
     try {
@@ -126,7 +71,7 @@ export default function App() {
       if (showSettings) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const key = e.key;
-      // Space: open/close preview for hovered item
+
       if (key === settings.keybindings.preview) {
         e.preventDefault();
         if (previewIndex !== null || videoPreviewIndex !== null) {
@@ -141,13 +86,13 @@ export default function App() {
           }
         }
       }
-      // pick key: toggle pick for hovered item (grid mode)
+
       if (key.toLowerCase() === settings.keybindings.pick.toLowerCase() && hoverIndex !== null && previewIndex === null) {
         e.preventDefault();
-        onTogglePickRef.current(groups[hoverIndex].id);
+        togglePickRef.current(groups[hoverIndex].id);
       }
     },
-    [showSettings, settings.keybindings.preview, previewIndex, videoPreviewIndex, hoverIndex, groups]
+    [showSettings, settings.keybindings, previewIndex, videoPreviewIndex, hoverIndex, groups]
   );
 
   useEffect(() => {
@@ -160,16 +105,14 @@ export default function App() {
       <Sidebar
         bookmarks={bookmarks}
         activeId={activeBookmarkId}
-        onSelect={handleSelectBookmark}
-        onAdd={handleAddBookmark}
-        onDelete={handleDeleteBookmark}
+        onSelect={selectBookmark}
+        onAdd={addBookmark}
+        onDelete={deleteBookmark}
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Toolbar */}
-        <div
-          className="flex items-center justify-between px-4 py-3 border-b border-white/5 shrink-0"
-        >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 shrink-0">
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-white/80">Quick Preview</span>
             {activeBookmarkId && (
@@ -182,25 +125,24 @@ export default function App() {
             )}
           </div>
 
-            {/* Search */}
-            <div className="relative flex items-center">
-              <Search size={13} className="absolute left-2.5 text-white/30 pointer-events-none" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="搜索文件名..."
-                className="pl-8 pr-7 py-1.5 text-sm bg-white/5 border border-white/10 rounded-lg text-white/70 placeholder-white/20 focus:outline-none focus:border-white/20 w-48"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => { setSearchQuery(""); setDebouncedQuery(""); }}
-                  className="absolute right-2 text-white/30 hover:text-white/60"
-                >
-                  <X size={12} />
-                </button>
-              )}
-            </div>
+          <div className="relative flex items-center">
+            <Search size={13} className="absolute left-2.5 text-white/30 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              placeholder="搜索文件名..."
+              className="pl-8 pr-7 py-1.5 text-sm bg-white/5 border border-white/10 rounded-lg text-white/70 placeholder-white/20 focus:outline-none focus:border-white/20 w-48"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => { setSearchQuery(""); setDebouncedQuery(""); }}
+                className="absolute right-2 text-white/30 hover:text-white/60"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
 
           <div className="flex items-center gap-2">
             {pickedIds.size > 0 && (
@@ -225,7 +167,7 @@ export default function App() {
               <ArrowDownUp size={14} className={sortDesc ? "text-blue-400" : ""} />
             </button>
             <button
-              onClick={() => activeBookmarkId && loadFolder(bookmarks.find(b => b.id === activeBookmarkId)!.path)}
+              onClick={refreshFolder}
               disabled={!activeBookmarkId || loading}
               title="刷新"
               className="w-8 h-8 flex items-center justify-center rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-30"
@@ -234,7 +176,7 @@ export default function App() {
             </button>
             <button
               onClick={() => setSelectionMode((v) => !v)}
-              title="多选模式 (F键选中)"
+              title="多选模式"
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${
                 selectionMode
                   ? "bg-blue-500/20 text-blue-400 border border-blue-500/40"
@@ -270,7 +212,8 @@ export default function App() {
               }}
               onHoverIndex={setHoverIndex}
               selectionMode={selectionMode}
-              onTogglePick={handleTogglePick}
+              onTogglePick={togglePick}
+              ffmpegPath={ffmpegPath}
             />
           )}
         </div>
@@ -282,9 +225,9 @@ export default function App() {
         pickedIds={pickedIds}
         keybindings={settings.keybindings}
         onClose={() => setPreviewIndex(null)}
-        onNext={() => setPreviewIndex((i) => (i !== null && i < groups.length - 1 ? i + 1 : i))}
+        onNext={() => setPreviewIndex((i) => (i !== null && i < filteredGroups.length - 1 ? i + 1 : i))}
         onPrev={() => setPreviewIndex((i) => (i !== null && i > 0 ? i - 1 : i))}
-        onTogglePick={handleTogglePick}
+        onTogglePick={togglePick}
       />
 
       <VideoPreviewModal
@@ -295,14 +238,14 @@ export default function App() {
         onClose={() => setVideoPreviewIndex(null)}
         onNext={() => setVideoPreviewIndex((i) => (i !== null && i < filteredGroups.length - 1 ? i + 1 : i))}
         onPrev={() => setVideoPreviewIndex((i) => (i !== null && i > 0 ? i - 1 : i))}
-        onTogglePick={handleTogglePick}
+        onTogglePick={togglePick}
       />
 
       <SettingsModal
         open={showSettings}
         settings={settings}
         onClose={() => setShowSettings(false)}
-        onChange={handleSettingsChange}
+        onChange={updateSettings}
       />
     </div>
   );

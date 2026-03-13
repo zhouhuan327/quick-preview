@@ -112,7 +112,7 @@ export function PreviewModal({
             }`}
           >
             {isPicked && <Check size={13} strokeWidth={3} />}
-            {isPicked ? "已选中" : "按 P 选中"}
+            {isPicked ? "已选中" : `按 ${keybindings.pick.toUpperCase()} 选中`}
           </button>
 
           {/* Navigation */}
